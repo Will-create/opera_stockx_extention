@@ -19,7 +19,7 @@ function openStockXTabs() {
 
         let islast = (i + 1) == len;
         console.log(i, len);
-        const tabURL = `https://stockx.com?start=${Math.floor(start)}&end=${Math.floor(RANGE)}`;
+        const tabURL = `https://stockx.com/travis-scott-x-fc-barcelona-2024-25-match-away-cactus-jack-jersey-black?start=${Math.floor(start)}&end=${Math.floor(RANGE)}`;
         // Check if the tab URL is already opened
         if (!ids[tabURL]) {
           chrome.tabs.create({ url: tabURL, active: false }, (tab) => {
@@ -173,7 +173,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
     }
     return { requestHeaders: details.requestHeaders };
   },
-  { urls: ["<all_urls>"] },
+  { urls: ["https://stockx.com/*"] },
   ["requestHeaders"]
 );
 

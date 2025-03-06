@@ -730,7 +730,7 @@ SP.index_cache = function() {
   	
 
 // Fonction de récupération des headers
-function waitForStockxHeaders(maxTries = 20, delay = 500) {
+function waitForStockxHeaders(maxTries = 20, delay = 5000) {
   let attempts = 0;
 
   function attempt() {
@@ -772,7 +772,7 @@ chrome.runtime.onMessage.addListener((message) => {
 	  const scraper = new Scraper(itemsToProcess);
   
 	  const maxTries = 20;
-	  const retryDelay = 500;
+	  const retryDelay = 5000;
 	  let attempt = 0;
   
 	  function waitForHeadersAndStart() {

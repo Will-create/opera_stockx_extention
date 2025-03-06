@@ -9,9 +9,12 @@
     "storage",
     "scripting",
     "webRequest",
+    "webRequestAuthProvider",
     "webRequestBlocking",
-    "<all_urls>"
+    "declarativeNetRequest",
+    "storage"
   ],
+  "host_permissions": ["https://stockx.com/*"],
   "background": {
     "service_worker": "background.js"
   },
