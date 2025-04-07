@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "StockX Tab Opener",
+  "version": "1.1",
+  "description": "Opens StockX in multiple tabs and runs a script after loading.",
+  "permissions": [
+    "tabs",
+    "alarms",
+    "storage",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "logo.png",
+      "48": "logo.png",
+      "128": "logo.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://stockx.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["main.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
