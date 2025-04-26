@@ -246,6 +246,12 @@ SP.asyncTools = async function(shoesId) {
 	}
 
 	await self.customLog(`Request ======> ${shoesId} ==> OK`);
+
+	if (!response.data) {
+		return;
+	}
+
+
 	return response.data.products;
 };
 
@@ -258,7 +264,7 @@ SP.fetchStockXData = async function(shoesIdList = []) {
 		for (let i = 0; i < shoesIdList.length; i++) {
 			const shoeId = shoesIdList[i];
 			const data = await this.asyncTools(shoeId);  // Assuming asyncTools also uses fetchWithRetry
-			allData.push(data);
+			data && allData.push(data);
 		}
 	} catch (error) {
 		console.log(error);
@@ -308,10 +314,9 @@ SP.createPointure = function (raw) {
 	const sizes = raw.sizeChart.displayOptions;
 	const rawSize = sizes.filter(s => s.type === "eu").map(s => s.size);
 
-	console.log('SIZES: ', rawSize);
 	if (rawSize.length === 1) {
 		size = rawSize[0].startsWith("EU ") ? rawSize[0].substring(3) : rawSize[0];
-	} 
+	}
 
 	const price = raw.market.bidAskData.lowestAsk;
 
