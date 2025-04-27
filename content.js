@@ -91,7 +91,7 @@ function next_wait(self, onItem, callback, thread, tmp) {
 };
 
 
-const SP = Scraper.prototype;
+const SP = Scraper.prototype; // Extend the object with prototype
 
 SP.handleOffline = function() {
 	this.isOnline = false;
