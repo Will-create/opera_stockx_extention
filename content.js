@@ -231,28 +231,33 @@ type
 SP.asyncTools = async function(shoesId) {
 	var self = this;
 	await self.delay(2300);
-	const response = await self.fetchWithRetry(self.api, {
-		method: 'POST',
-		headers: HEADERS,
-		body: JSON.stringify(self.payload(shoesId)),
-	});
 
-	if (response.errors) {
-		await self.customLog(`Erreur GraphQL: ${response.errors[0].message} pour la chaussure ${shoesId}`, true);
-		if (self.current && !self.done[self.current.id])
-			self.queue[self.current.id] = self.current;
+	try {
+		const response = await self.fetchWithRetry(self.api, {
+			method: 'POST',
+			headers: HEADERS,
+			body: JSON.stringify(self.payload(shoesId)),
+		});
 
-		self.next();
+		if (response && response.errors) {
+			await self.customLog(`Erreur GraphQL: ${response.errors[0].message} pour la chaussure ${shoesId}`, true);
+			if (self.current && !self.done[self.current.id])
+				self.queue[self.current.id] = self.current;
+			return null; // <- important pour ne pas bloquer la suite
+		}
+
+		await self.customLog(`Request ======> ${shoesId} ==> OK`);
+
+		if (!response || !response.data) {
+			return null;
+		}
+
+		return response.data.products;
+
+	} catch (err) {
+		await self.customLog(`Erreur dans asyncTools pour la chaussure ${shoesId}: ${err.message}`, true);
+		return null; // <- ne bloque pas la suite du traitement
 	}
-
-	await self.customLog(`Request ======> ${shoesId} ==> OK`);
-
-	if (!response.data) {
-		return;
-	}
-
-
-	return response.data.products;
 };
 
 // Example request method using fetchWithRetry
