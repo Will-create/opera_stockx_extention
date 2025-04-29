@@ -267,10 +267,14 @@ SP.fetchStockXData = async function(shoesIdList = []) {
 	let allData = [];
 
 	try {
-		for (let i = 0; i < shoesIdList.length; i++) {
-			const shoeId = shoesIdList[i];
-			const data = await this.asyncTools(shoeId);  // Assuming asyncTools also uses fetchWithRetry
-			data && allData.push(data);
+		const results = await Promise.allSettled(shoesIdList.map(id => self.asyncTools(id)));
+
+		for (const result of results) {
+			if (result.status === 'fulfilled' && result.value) {
+				allData.push(result.value);
+			} else {
+				await self.customLog(`Echec de traitement pour une chaussure: ${result.reason}`, true);
+			}
 		}
 	} catch (error) {
 		console.log(error);
