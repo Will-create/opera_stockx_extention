@@ -17,10 +17,21 @@ function openStockXTabs() {
         const tabURL = `https://stockx.com?start=${Math.floor(start)}&end=${Math.floor(RANGE)}`;
         // Check if the tab URL is already opened
         if (!ids[tabURL]) {
-            chrome.tabs.create({ url: tabURL }, (tab) => {
-            urls[start] = tabURL; // Save the tab URL and ID
-            ids[tabURL] = tab.id; // Save the tab URL and ID
+          chrome.tabs.create({ url: tabURL, active: false }, (tab) => {
+            urls[start] = tabURL;
+            ids[tabURL] = tab.id;
+          
+            // Wait for the tab to fully load before messaging
+            const listener = function(tabId, info) {
+              if (tabId === tab.id && info.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(listener);
+                chrome.tabs.sendMessage(tabId, { action: "startScript" });
+              }
+            };
+          
+            chrome.tabs.onUpdated.addListener(listener);
           });
+          
         } else {
           console.log('Tab already exists for URL:', tabURL);
         }

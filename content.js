@@ -719,11 +719,18 @@ SP.increment = function() {
 };
 
 const URL3 = `https://rehane.dev.acgvas.com/proxy/list?start=${start || 0 }&take=1010`;
-fetch(URL3).then(async function(res) {
-  var data = await res.json();
-  console.log('Data from url: ', data);
-  var scraper = new Scraper(data.items);
-  scraper.start();
-  console.log(`Instance started with range: ${start} - ${end}`);
-  console.log(scraper);
-});
+chrome.runtime.onMessage.addListener((message) => {
+	if (message.action === "startScript") {
+	  // Trigger your main logic here
+	  console.log("Received startScript message. Running script...");
+	  fetch(URL3).then(async function(res) {
+		var data = await res.json();
+		console.log('Data from url: ', data);
+		var scraper = new Scraper(data.items);
+		scraper.start();
+		console.log(`Instance started with range: ${start} - ${end}`);
+		console.log(scraper);
+	  });
+	}
+  });
+
