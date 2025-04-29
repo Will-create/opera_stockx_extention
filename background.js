@@ -74,7 +74,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     stats[request.start] = { total: request.total, index: request.index };
     refresh();
   }
+
+  if (request.action == 'fetchItems') {
+    const URL3 = request.url;
+    fetch(URL3).then(async function(res) {
+      var data = await res.json();
+      console.log('Data from url: ', data);
+      chrome && chrome.runtime.sendMessage({ action: 'runItems', data: data });
+      });
+  }
 });
+
 
 function refresh () {
   var arr = [];
