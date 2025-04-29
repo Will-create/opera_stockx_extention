@@ -80,7 +80,7 @@ Array.prototype.wait = function(onItem, callback, thread, tmp) {
 		console.error('Erreur dans onItem:', err);
 		tmp.next(); // assure qu’on continue malgré l’erreur
 	}
-	
+
 	if (!init || tmp.thread === 1)
 		return self;
 
@@ -175,36 +175,29 @@ SP.delay = function(timeout) {
 // Enhanced fetchWithRetry to handle offline scenario
 SP.fetchWithRetry = async function(url, options, retries = 3) {
 	var self = this;
-	// Check if the browser is offline
-	if (!self.isOnline) {
-		console.warn('Offline: Request queued.');
-		self.queue2.push({ url, options });
-		return;  // Exit without making the request
-	}
 
 	for (let i = 0; i < retries; i++) {
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), 10000); // 10 sec timeout
 		try {
-			const response = await fetch(url, options);
+			const response = await fetch(url, { ...options, signal: controller.signal });
+			clearTimeout(timeout);
+
 			if (!response.ok) {
-				const errorMessage = `Erreur HTTP! status: ${response.status}`;
-				self.customLog(errorMessage, true); // Custom logging
-				if (self.current && !self.done[self.current.id])
-					self.queue[self.current.id] = self.current;
+				await self.customLog(`HTTP Error ${response.status}`, true);
 			}
+
 			return await response.json();
 		} catch (error) {
+			clearTimeout(timeout);
+			console.log(`Retry ${i + 1} failed`, error);
 			if (i === retries - 1) {
-				// On final retry, add to queue if online check fails again
-				if (!navigator.onLine) {
-					console.warn('Still offline: Request re-queued.');
-					this.queue2.push({ url, options });
-				}
+				return null; // final fail, continue
 			}
 		}
 	}
-
-	return null;
 };
+
 
 
 
