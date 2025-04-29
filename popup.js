@@ -41,7 +41,7 @@ function updateProgressItem(item) {
 
 // Listen for progress updates from the background script
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.action === "updateProgress" || "tab_progress") {
+  if (message.action === "updateProgress") {
     const items = JSON.parse(message.data);
     items.forEach((item) => {
       // Check if the progress item already exists

@@ -73,7 +73,6 @@ Array.prototype.wait = function(onItem, callback, thread, tmp) {
 	}
 
 	tmp.pending++;
-	tmp.pending++;
 	try {
 		onItem.call(self, item, tmp.next, tmp.index);
 	} catch (err) {
@@ -663,6 +662,8 @@ SP.start = async function () {
 		} else {
 			groups[link.id].items.push(link);
 		}
+
+	
 		resume();
 	}, async function() {
 		var ids = Object.keys(groups);
@@ -720,24 +721,18 @@ SP.increment = function() {
 
 const URL3 = `https://rehane.dev.acgvas.com/proxy/list?start=${start || 0 }&take=1010`;
 chrome.runtime.onMessage.addListener((message) => {
-	if (message.action === "startScript") {
-	  // Trigger your main logic here
-
-  	chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3 });
-	}
-  });
-
-
-  chrome.runtime.onMessage.addListener((message) => {
 	if (message.action === "runItems") {
-	  // Trigger your main logic here
-	  var data = message.data;
-	  console.log('Data from url: ', data);
-	  var scraper = new Scraper(data.items);
-	  scraper.start();
-	  console.log(`Instance started with range: ${start} - ${end}`);
-	  console.log(scraper);
-  	chrome.runtime.sendMessage({ action: 'runItems', url: URL3 });
-	}
+		// Trigger your main logic here
+		console.log('DATA READY');
+		var data = message.data;
+		var scraper = new Scraper(data.items);
+		scraper.start();
+		console.log(`Instance started with range: ${start} - ${end}`);
+		console.log(scraper);
+	  }
+
+
+	
   });
 
+chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3, start: start });
