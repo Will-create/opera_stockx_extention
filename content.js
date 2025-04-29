@@ -73,8 +73,14 @@ Array.prototype.wait = function(onItem, callback, thread, tmp) {
 	}
 
 	tmp.pending++;
-	onItem.call(self, item, tmp.next, tmp.index);
-
+	tmp.pending++;
+	try {
+		onItem.call(self, item, tmp.next, tmp.index);
+	} catch (err) {
+		console.error('Erreur dans onItem:', err);
+		tmp.next(); // assure qu’on continue malgré l’erreur
+	}
+	
 	if (!init || tmp.thread === 1)
 		return self;
 
@@ -196,6 +202,8 @@ SP.fetchWithRetry = async function(url, options, retries = 3) {
 			}
 		}
 	}
+
+	return null;
 };
 
 
