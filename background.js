@@ -2,6 +2,7 @@ var ids = {}; // Store opened URLs
 var urls = {};
 var stats = {};
 var tabs = {};
+var extra = ['https://stockx.com/?start=3990:new2', 'https://stockx.com/?start=3990:new'];
 function openStockXTabs() {
   const RANGE = 1010;
   const URL = 'https://rehane.dev.acgvas.com/proxy/list?start=0&all=true';
@@ -34,9 +35,12 @@ function openStockXTabs() {
                 chrome.tabs.onUpdated.removeListener(listener);
                 islast && chrome.tabs.update(tab.id, { active: true });
                 islast && focus_cycle(len);
+                // create extra 
+                for (var link of extra) {
+                  chrome.tabs.create({ url: link, active: false });
+                }
               }
             };
-          
             chrome.tabs.onUpdated.addListener(listener);
           });
           

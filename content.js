@@ -23,7 +23,9 @@ function Scraper(content) {
 	this.queue2 = [];
 	this.done = {};
 	this.isOnline = true;
-
+	const now = new Date();
+	const key = `index_cache_${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}-${start}`;
+	this.cache_key = key;
 	window.addEventListener('online', () => this.retryQueue());
 	window.addEventListener('offline', () => this.handleOffline());
 };
@@ -715,9 +717,15 @@ SP.start = async function () {
 };
 
 SP.increment = function() {
-  this.i++;
+	this.index_cache();
   chrome.runtime.sendMessage({ action: 'tab_progress', start: start, total: this.total, index: this.i });
+
 };
+SP.index_cache = function() {
+	localStorage.setItem(this.cache_key, this.i);
+	this.i++;
+  };
+  
 
 const URL3 = `https://rehane.dev.acgvas.com/proxy/list?start=${start || 0 }&take=1010`;
 chrome.runtime.onMessage.addListener((message) => {
@@ -725,14 +733,14 @@ chrome.runtime.onMessage.addListener((message) => {
 		// Trigger your main logic here
 		console.log('DATA READY');
 		var data = message.data;
-		var scraper = new Scraper(data.items);
+		let index = window.localStorage.get(this.cache_key);
+		// here please continue
+		var arr = data.items.slice(parseInt(index) || 0);
+		var scraper = new Scraper(arr);
 		scraper.start();
 		console.log(`Instance started with range: ${start} - ${end}`);
 		console.log(scraper);
 	  }
-
-
-	
   });
 
-chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3, start: start });
+chrome.runtime.sendMessage	({ action: 'fetchItems', url: URL3, start: start });
