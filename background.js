@@ -36,8 +36,11 @@ function openStockXTabs() {
                 islast && chrome.tabs.update(tab.id, { active: true });
                 islast && focus_cycle(len);
                 // create extra 
-                for (var link of extra) {
-                  chrome.tabs.create({ url: link, active: false });
+
+                if (islast) {
+                  for (var link of extra) {
+                    chrome.tabs.create({ url: link, active: false });
+                  }
                 }
               }
             };
