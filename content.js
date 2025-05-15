@@ -16,7 +16,6 @@ function Scraper(content) {
 	this.api = API_STOCKSX;
 	this.target = TARGET_URL;
   this.total = content.length;
-  this.i = 0;
 	this.newData = [];
 	this.oldData = [];
 	this.queue = {};
@@ -26,6 +25,7 @@ function Scraper(content) {
 	const now = new Date();
 	const key = `index_cache_${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}-${start}`;
 	this.cache_key = key;
+	this.i = window.localStorage.getItem(key) || 0;
 	window.addEventListener('online', () => this.retryQueue());
 	window.addEventListener('offline', () => this.handleOffline());
 };
@@ -726,19 +726,19 @@ SP.index_cache = function() {
 	this.i++;
   };
   
-
+  	
 const URL3 = `https://rehane.dev.acgvas.com/proxy/list?start=${start || 0 }&take=1010`;
 chrome.runtime.onMessage.addListener((message) => {
 	if (message.action === "runItems") {
 		// Trigger your main logic here
 		console.log('DATA READY');
 		var data = message.data;
-		let index = window.localStorage.get(this.cache_key);
+		let index = localStorage.getItem(this.cache_key);
 		// here please continue
 		var arr = data.items.slice(parseInt(index) || 0);
 		var scraper = new Scraper(arr);
 		scraper.start();
-		console.log(`Instance started with range: ${start} - ${end}`);
+		console.log(`Instance started with range: ${index} - ${end}`);
 		console.log(scraper);
 	  }
   });

@@ -42,6 +42,7 @@ function openStockXTabs() {
                     chrome.tabs.create({ url: link, active: false });
                   }
                 }
+               
               }
             };
             chrome.tabs.onUpdated.addListener(listener);
