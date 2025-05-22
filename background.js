@@ -155,3 +155,30 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     }
   }
 });
+
+
+
+let capturedHeaders = null;
+
+chrome.webRequest.onBeforeSendHeaders.addListener(
+  function (details) {
+    if (details.url.includes("/api/p/e") && details.method === "POST") {
+      const headers = {};
+      for (const h of details.requestHeaders) {
+        headers[h.name.toLowerCase()] = h.value;
+      }
+
+      capturedHeaders = headers;
+      console.log("🔥 Headers capturés :", headers);
+    }
+    return { requestHeaders: details.requestHeaders };
+  },
+  { urls: ["<all_urls>"] },
+  ["requestHeaders"]
+);
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "getHeaders") {
+    sendResponse({ headers: capturedHeaders });
+  }
+});

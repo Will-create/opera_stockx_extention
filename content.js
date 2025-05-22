@@ -3,6 +3,8 @@ const start = urlParams.get('start');
 const end = urlParams.get('end');
 
 
+  // Variable globale
+window.STOCKX_HEADERS = null;
 const PROXYSERVER = "https://rehane.innovxpro.com/proxy";
 const PROXYSERVER_TOKEN = "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";
 const API_STOCKSX = "https://stockx.com/api/p/e";
@@ -237,7 +239,7 @@ SP.asyncTools = async function(shoesId) {
 	try {
 		const response = await self.fetchWithRetry(self.api, {
 			method: 'POST',
-			headers: HEADERS,
+			headers: STOCKX_HEADERS,
 			body: JSON.stringify(self.payload(shoesId)),
 		});
 
@@ -725,22 +727,73 @@ SP.index_cache = function() {
 	localStorage.setItem(this.cache_key, this.i);
 	this.i++;
   };
-  
   	
+
+// Fonction de récupération des headers
+function waitForStockxHeaders(maxTries = 20, delay = 500) {
+  let attempts = 0;
+
+  function attempt() {
+    chrome.runtime.sendMessage({ type: "getHeaders" }, (response) => {
+      if (response && response.headers) {
+        console.log("✅ Headers capturés :", response.headers);
+        window.STOCKX_HEADERS = response.headers;
+		
+      } else {
+        attempts++;
+        if (attempts < maxTries) {
+          console.log(`⏳ Tentative ${attempts}/${maxTries}...`);
+          setTimeout(attempt, delay);
+        } else {
+          console.warn("⛔ Impossible de récupérer les headers.");
+        }
+      }
+    });
+  }
+
+  attempt();
+}
+
+// Lance l’écoute automatique au chargement du content.js
+waitForStockxHeaders();
+
 const URL3 = `https://rehane.dev.acgvas.com/proxy/list?start=${start || 0 }&take=1010`;
 chrome.runtime.onMessage.addListener((message) => {
 	if (message.action === "runItems") {
-		// Trigger your main logic here
-		console.log('DATA READY');
-		var data = message.data;
-		let index = localStorage.getItem(this.cache_key);
-		// here please continue
-		var arr = data.items.slice(parseInt(index) || 0);
-		var scraper = new Scraper(arr);
-		scraper.start();
-		console.log(`Instance started with range: ${index} - ${end}`);
-		console.log(scraper);
+	  const data = message.data;
+	  console.log('🟢 DATA READY', data);
+  
+	  const index = parseInt(localStorage.getItem("your_cache_key")) || 0;
+	  const itemsToProcess = data.items.slice(index);
+  
+	  const start = index;
+	  const end = itemsToProcess.length;
+  
+	  const scraper = new Scraper(itemsToProcess);
+  
+	  const maxTries = 20;
+	  const retryDelay = 500;
+	  let attempt = 0;
+  
+	  function waitForHeadersAndStart() {
+		if (window.STOCKX_HEADERS) {
+		  console.log("✅ STOCKX_HEADERS disponibles, démarrage du scraper.");
+		  scraper.start();
+		  console.log(`⚙️ Instance started with range: ${start} - ${start + end}`);
+		  console.log(scraper);
+		} else {
+		  attempt++;
+		  if (attempt < maxTries) {
+			console.log(`⏳ En attente des headers... Tentative ${attempt}/${maxTries}`);
+			setTimeout(waitForHeadersAndStart, retryDelay);
+		  } else {
+			console.warn("⛔ Abandon : STOCKX_HEADERS non disponibles après plusieurs tentatives.");
+		  }
+		}
 	  }
+  
+	  waitForHeadersAndStart();
+	}
   });
-
-chrome.runtime.sendMessage	({ action: 'fetchItems', url: URL3, start: start });
+  
+chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3, start: start });

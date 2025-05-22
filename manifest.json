@@ -7,7 +7,10 @@
     "tabs",
     "alarms",
     "storage",
-    "scripting"
+    "scripting",
+    "webRequest",
+    "webRequestBlocking",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
