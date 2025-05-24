@@ -2,6 +2,8 @@ var ids = {}; // Store opened URLs
 var urls = {};
 var stats = {};
 var tabs = {};
+let capturedHeaders = null;
+let haslistener = false;
 var extra = ['https://stockx.com/?start=3990:new2', 'https://stockx.com/?start=3990:new'];
 function openStockXTabs() {
   const RANGE = 1010;
@@ -45,6 +47,21 @@ function openStockXTabs() {
                
               }
             };
+            chrome.debugger.attach({ tabId: tab.id }, "1.3", () => {
+              chrome.debugger.sendCommand({tabId: tab.id}, "Network.enable");
+              
+              !haslistener && chrome.debugger.onEvent.addListener((debuggeeId, message, params) => {
+                if (message === "Network.requestWillBeSent") {
+                  if (params.request.url.includes("/api/p/e")) {
+                    haslistener = true;
+                    capturedHeaders = params.request.headers;
+                    console.log("🔥 Headers capturés :", capturedHeaders);
+                    // ici tu peux stocker les headers
+                  }
+                }
+              });
+            });
+
             chrome.tabs.onUpdated.addListener(listener);
           });
           
@@ -155,27 +172,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     }
   }
 });
-
-
-
-let capturedHeaders = null;
-
-chrome.webRequest.onBeforeSendHeaders.addListener(
-  function (details) {
-    if (details.url.includes("/api/p/e") && details.method === "POST") {
-      const headers = {};
-      for (const h of details.requestHeaders) {
-        headers[h.name.toLowerCase()] = h.value;
-      }
-
-      capturedHeaders = headers;
-      console.log("🔥 Headers capturés :", headers);
-    }
-    return { requestHeaders: details.requestHeaders };
-  },
-  { urls: ["https://stockx.com/*"] },
-  ["requestHeaders"]
-);
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "getHeaders") {

@@ -8,11 +8,7 @@
     "alarms",
     "storage",
     "scripting",
-    "webRequest",
-    "webRequestAuthProvider",
-    "webRequestBlocking",
-    "declarativeNetRequest",
-    "storage"
+    "debugger"
   ],
   "host_permissions": ["https://stockx.com/*"],
   "background": {
@@ -30,7 +26,7 @@
     {
       "matches": ["https://stockx.com/*"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "content_security_policy": {
@@ -38,8 +34,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["main.js"],
-      "matches": ["<all_urls>"]
+      "resources": ["inject.js"],
+      "matches": ["https://stockx.com/*"]
     }
   ]
 }

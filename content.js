@@ -2,7 +2,16 @@ const urlParams = new URLSearchParams(window.location.search);
 const start = urlParams.get('start');
 const end = urlParams.get('end');
 
+function injectExternalScript() {
+	const script = document.createElement('script');
+	script.src = chrome.runtime.getURL('inject.js');
+	script.onload = () => script.remove();
+	(document.head || document.documentElement).appendChild(script);
+  }
+  
+  injectExternalScript();
 
+  
   // Variable globale
 window.STOCKX_HEADERS = null;
 const PROXYSERVER = "https://rehane.innovxpro.com/proxy";
@@ -233,36 +242,56 @@ type
 };
 
 SP.asyncTools = async function(shoesId) {
-	var self = this;
-	await self.delay(2300);
+		var self = this;
+		await self.delay(2300);
 
-	try {
-		const response = await self.fetchWithRetry(self.api, {
-			method: 'POST',
-			headers: STOCKX_HEADERS,
-			body: JSON.stringify(self.payload(shoesId)),
-		});
+		const sessionData = {
+			cookies: document.cookie,
+			userAgent: navigator.userAgent,
+			language: navigator.language,
+			timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+			platform: navigator.platform,
+			referrer: document.referrer,
+			deviceMemory: navigator.deviceMemory || 'unknown',
+			screen: {
+			  width: screen.width,
+			  height: screen.height,
+			  pixelDepth: screen.pixelDepth,
+			},
+			stockxUUID: window.localStorage.getItem('x-stockx-device-uuid'), // StockX often uses this
+		  };
 
-		if (response && response.errors) {
-			await self.customLog(`Erreur GraphQL: ${response.errors[0].message} pour la chaussure ${shoesId}`, true);
-			if (self.current && !self.done[self.current.id])
-				self.queue[self.current.id] = self.current;
-			return null; // <- important pour ne pas bloquer la suite
+		try {
+			const response = await self.fetchWithRetry(self.api, {
+				method: 'POST',
+				headers: {
+					...HEADERS,
+					...STOCKX_HEADERS,
+					sessionData
+				},
+				body: JSON.stringify(self.payload(shoesId)),
+			});
+
+			if (response && response.errors) {
+				await self.customLog(`Erreur GraphQL: ${response.errors[0].message} pour la chaussure ${shoesId}`, true);
+				if (self.current && !self.done[self.current.id])
+					self.queue[self.current.id] = self.current;
+				return null; // <- important pour ne pas bloquer la suite
+			}
+
+			await self.customLog(`Request ======> ${shoesId} ==> OK`);
+
+			if (!response || !response.data) {
+				return null;
+			}
+
+			return response.data.products;
+
+		} catch (err) {
+			await self.customLog(`Erreur dans asyncTools pour la chaussure ${shoesId}: ${err.message}`, true);
+			return null; // <- ne bloque pas la suite du traitement
 		}
-
-		await self.customLog(`Request ======> ${shoesId} ==> OK`);
-
-		if (!response || !response.data) {
-			return null;
-		}
-
-		return response.data.products;
-
-	} catch (err) {
-		await self.customLog(`Erreur dans asyncTools pour la chaussure ${shoesId}: ${err.message}`, true);
-		return null; // <- ne bloque pas la suite du traitement
-	}
-};
+	};
 
 // Example request method using fetchWithRetry
 SP.fetchStockXData = async function(shoesIdList = []) {
