@@ -47,21 +47,7 @@ function openStockXTabs() {
                
               }
             };
-            chrome.debugger.attach({ tabId: tab.id }, "1.3", () => {
-              chrome.debugger.sendCommand({tabId: tab.id}, "Network.enable");
-              
-              !haslistener && chrome.debugger.onEvent.addListener((debuggeeId, message, params) => {
-                if (message === "Network.requestWillBeSent") {
-                  if (params.request.url.includes("/api/p/e")) {
-                    haslistener = true;
-                    capturedHeaders = params.request.headers;
-                    console.log("🔥 Headers capturés :", capturedHeaders);
-                    // ici tu peux stocker les headers
-                  }
-                }
-              });
-            });
-
+          
             chrome.tabs.onUpdated.addListener(listener);
           });
           
