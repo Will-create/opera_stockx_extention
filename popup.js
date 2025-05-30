@@ -62,13 +62,12 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 }); 
 
-// Start button click listener
+// Start button click listener - CORRIGÉ
 document.getElementById("openTabs").addEventListener("click", () => {
-  chrome.runtime.sendMessage({ action: "openStockXTabs" }, (response) => {
-    if (response && response.status === "Tabs opened") {
-      console.log("StockX tabs opened successfully.");
-    } else {
-      console.error("Failed to open StockX tabs.");
-    }
+  const sampleSize = parseInt(document.getElementById('sampleSize').value) || 0;
+  
+  chrome.runtime.sendMessage({
+    action: 'openStockXTabs',
+    sampleSize: sampleSize
   });
 });

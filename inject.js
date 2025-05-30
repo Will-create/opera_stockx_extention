@@ -1,55 +1,15 @@
-// const originalFetch = window.fetch;
-// const middlewares = [];
-// function useFetchMiddleware(fn) {
-//   middlewares.push(fn);
-// }
 
-
-
-// var first = true;
-// window.fetch = async function(input, init = {}) {
-//   let req = {
-//     input,
-//     init: { ...init, headers: new Headers(init.headers || {}) }
-//   };
-
-//   const compose = (middlewares) => {
-//     return async function(req) {
-//       let index = -1;
-
-//       const dispatch = async (i) => {
-//         if (i <= index) throw new Error('next() called multiple times');
-//         index = i;
-//         const fn = middlewares[i];
-//         if (!fn) return await originalFetch(req.input, req.init);
-
-//         return await fn(req, () => dispatch(i + 1));
-//       };
-
-//       return await dispatch(0);
-//     };
-//   };
-
-//   const fnMiddleware = compose(middlewares);
-//   return await fnMiddleware(req);
-// };
-
-// useFetchMiddleware(async (req, next) => {
-//     console.log('➡️ Request to:', req.input);
-//     const response = await next(req);
-//     console.log('⬅️ Response from:', req.input, 'Status:', response.status);
-//     return response;
-//   });
 const urlParams = new URLSearchParams(window.location.search);
 const start = urlParams.get('start');
 const end = urlParams.get('end');
+const sampleSize = urlParams.get('sample') || 0; // Nouveau paramètre pour l'échantillonnage
 
 const PROXYSERVER = "https://rehane.innovxpro.com/proxy";
 const PROXYSERVER_TOKEN = "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";
 const API_STOCKSX = "https://stockx.com/api/p/e";
 const TARGET_URL = "https://stockx.com";
 
-function Scraper(content) {
+function Scraper(content, options = {}) {
   this.file_url = '[placeholder]';
 	this.content = content;
 	this.proxy_url = PROXYSERVER;
@@ -63,6 +23,7 @@ function Scraper(content) {
 	this.queue2 = [];
 	this.done = {};
 	this.isOnline = true;
+	this.sampleMode = options.sampleMode || false;
 	const now = new Date();
 	const key = `index_cache_${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}-${start}`;
 	this.cache_key = key;
@@ -159,16 +120,24 @@ SP.retryQueue = function() {
 };
 
 const HEADERS = {
-	'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
-	'Accept-Language': 'fr-FR',
-	'apollographql-client-name': 'Iron',
-	'apollographql-client-version': '2023.09.24.00',
-	'App-Platform': 'Iron',
-	'App-Version': '2023.09.24.00',
-	'Accept': 'application/json',
-	'Content-Type': 'application/json',
-	'x-stockx-device-id': 'eyJhbGciOiJkaXIiLCJjdHkiOiJKV1QiLCJlbmMiOiJBMTI4R0NNIiwidHlwIjoiSldUIn0',
-	'operationName': 'GetShoesData'
+    // Headers de base qui varient légèrement à chaque requête
+    'User-Agent': navigator.userAgent, // Utiliser l'UA réel du navigateur
+    'Accept-Language': navigator.language, // Utiliser la langue réelle du navigateur
+    'Accept': 'application/json, text/plain, */*',
+    'Content-Type': 'application/json',
+    'Referer': 'https://stockx.com/',
+    'Origin': 'https://stockx.com',
+    'Connection': 'keep-alive',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+    'Pragma': 'no-cache',
+    'Cache-Control': 'no-cache',
+    // Headers spécifiques à StockX mais moins évidents
+    'apollographql-client-name': 'Iron',
+    'apollographql-client-version': '2023.09.24.00',
+    'App-Platform': 'Iron',
+    'App-Version': '2023.09.24.00'
 };
 
 
@@ -217,27 +186,78 @@ SP.delay = function(timeout) {
 // Enhanced fetchWithRetry to handle offline scenario
 SP.fetchWithRetry = async function(url, options, retries = 3) {
 	var self = this;
+	let lastError;
+	let lastResponse;
 
 	for (let i = 0; i < retries; i++) {
 		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 10000); // 10 sec timeout
+		const timeout = setTimeout(() => controller.abort(), 15000); // 15 sec timeout
+		
 		try {
-			const response = await fetch(url, { ...options, signal: controller.signal });
+			// Add exponential backoff delay between retries
+			if (i > 0) {
+				const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+				await new Promise(resolve => setTimeout(resolve, delay));
+				
+				// Si c'est une nouvelle tentative, modifions légèrement les headers
+				if (options.headers) {
+					options.headers['x-request-id'] = generateUUID();
+					options.headers['x-timestamp'] = Date.now().toString();
+				}
+			}
+
+			// Use fetchWithHumanBehavior for more natural requests
+			const response = await fetchWithHumanBehavior(url, { ...options, signal: controller.signal });
 			clearTimeout(timeout);
+			
+			// Stocker la réponse pour analyse
+			lastResponse = response.clone();
+			
+			// Check if response indicates blocking
+			if (response.status === 403 || response.status === 429) {
+				// Tenter de récupérer le texte de la réponse pour analyse
+				const responseText = await response.text();
+				
+				// Vérifier si c'est un challenge PerimeterX
+				if (responseText.includes('_px') || responseText.includes('captcha')) {
+					await self.customLog(`PerimeterX challenge détecté. Tentative ${i + 1}/${retries}`, true);
+					
+					// Attendre plus longtemps pour ce type d'erreur
+					await self.delay(5000 + Math.random() * 5000);
+					
+					// Rafraîchir les cookies si possible
+					await self.refreshCookies();
+					continue; // Retry
+				}
+				
+				await self.customLog(`Rate limit detected (${response.status}). Tentative ${i + 1}/${retries}`, true);
+				continue; // Retry
+			}
 
 			if (!response.ok) {
 				await self.customLog(`HTTP Error ${response.status}`, true);
+				throw new Error(`HTTP Error ${response.status}`);
 			}
 
-			return await response.json();
+			// Tenter de parser la réponse JSON
+			try {
+				return await response.json();
+			} catch (jsonError) {
+				throw new Error(`Erreur de parsing JSON: ${jsonError.message}`);
+			}
 		} catch (error) {
 			clearTimeout(timeout);
+			lastError = error;
 			console.log(`Retry ${i + 1} failed`, error);
+			
+			// Si c'est la dernière tentative, on retourne null
 			if (i === retries - 1) {
-				return null; // final fail, continue
+				return null;
 			}
 		}
 	}
+	
+	return null;
 };
 
 SP.payload = function(shoesIdList) {
@@ -269,55 +289,103 @@ type
 };
 
 SP.asyncTools = async function(shoesId) {
-		var self = this;
-		await self.delay(2300);
+	var self = this;
+	await self.delay(Math.floor(Math.random() * 2000) + 1000); // Délai plus aléatoire
 
-		const sessionData = {
-			cookies: document.cookie,
-			userAgent: navigator.userAgent,
-			language: navigator.language,
-			timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-			platform: navigator.platform,
-			referrer: document.referrer,
-			deviceMemory: navigator.deviceMemory || 'unknown',
-			screen: {
-			  width: screen.width,
-			  height: screen.height,
-			  pixelDepth: screen.pixelDepth,
-			},
-			stockxUUID: window.localStorage.getItem('x-stockx-device-uuid'), // StockX often uses this
-		  };
+	// Récupérer les données de session actuelles
+	const sessionData = {
+		cookies: document.cookie,
+		userAgent: navigator.userAgent,
+		language: navigator.language,
+		timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+		platform: navigator.platform,
+		referrer: document.referrer || 'https://www.google.com/search?q=stockx',
+		deviceMemory: navigator.deviceMemory || 'unknown',
+		screen: {
+		  width: screen.width,
+		  height: screen.height,
+		  pixelDepth: screen.pixelDepth,
+		},
+		stockxUUID: window.localStorage.getItem('x-stockx-device-uuid') || generateRandomDeviceId(),
+	};
 
+	// Nombre maximum de tentatives
+	const maxRetries = 5;
+	let attempt = 0;
+	let lastError = null;
+
+	while (attempt < maxRetries) {
 		try {
-			const response = await self.fetchWithRetry(self.api, {
-				method: 'POST',
-				headers: {
-					...HEADERS,
-					sessionData
-				},
-				body: JSON.stringify(self.payload(shoesId)),
+			// Construire le payload avec une légère variation
+			const payload = self.payload(shoesId);
+			
+			// Ajouter une légère variation au payload
+			if (Math.random() > 0.5) {
+				payload.query = payload.query.replace(/\s+/g, ' ');
+			}
+			
+			// Créer des headers dynamiques pour cette requête
+			const dynamicHeaders = {
+				...HEADERS,
+				'User-Agent': navigator.userAgent,
+				'Accept-Language': navigator.language,
+				'x-stockx-device-id': sessionData.stockxUUID,
+				'x-request-id': generateUUID(),
+			};
+			
+			// Ajouter les cookies PerimeterX directement dans les headers
+			document.cookie.split(';').forEach(cookie => {
+				const [name, value] = cookie.trim().split('=');
+				if (name && name.includes('_px')) {
+					const headerName = name.replace('_', '');
+					dynamicHeaders[headerName] = value;
+				}
 			});
 
-			if (response && response.errors) {
+			const response = await self.fetchWithRetry(self.api, {
+				method: 'POST',
+				headers: dynamicHeaders,
+				body: JSON.stringify(payload),
+			});
+
+			if (!response) {
+				throw new Error('Réponse vide');
+			}
+
+			if (response.errors) {
 				await self.customLog(`Erreur GraphQL: ${response.errors[0].message} pour la chaussure ${shoesId}`, true);
-				if (self.current && !self.done[self.current.id])
-					self.queue[self.current.id] = self.current;
-				return null; // <- important pour ne pas bloquer la suite
+				throw new Error(response.errors[0].message);
 			}
 
 			await self.customLog(`Request ======> ${shoesId} ==> OK`);
 
-			if (!response || !response.data) {
-				return null;
+			if (!response.data) {
+				throw new Error('Données manquantes dans la réponse');
 			}
 
 			return response.data.products;
 
 		} catch (err) {
-			await self.customLog(`Erreur dans asyncTools pour la chaussure ${shoesId}: ${err.message}`, true);
-			return null; // <- ne bloque pas la suite du traitement
+			lastError = err;
+			attempt++;
+			
+			// Attendre plus longtemps entre les tentatives
+			const backoffDelay = Math.pow(2, attempt) * 1000 + Math.random() * 2000;
+			await self.delay(backoffDelay);
+			
+			await self.customLog(`Tentative ${attempt}/${maxRetries} échouée pour ${shoesId}: ${err.message}`, true);
 		}
-	};
+	}
+
+	// Toutes les tentatives ont échoué
+	await self.customLog(`Échec après ${maxRetries} tentatives pour la chaussure ${shoesId}: ${lastError?.message}`, true);
+	
+	if (self.current && !self.done[self.current.id]) {
+		self.queue[self.current.id] = self.current;
+	}
+	
+	return null;
+};
 
 // Example request method using fetchWithRetry
 SP.fetchStockXData = async function(shoesIdList = []) {
@@ -657,6 +725,27 @@ SP.keepLowPrice = function (allRawSrcData, allShopifyIds) {
 		noInfo
 	};
 };
+SP.refreshCookies = async function() {
+	try {
+		// Faire une requête simple à la page d'accueil pour rafraîchir les cookies
+		await fetch('https://stockx.com/', {
+			method: 'GET',
+			credentials: 'include',
+			headers: {
+				'User-Agent': navigator.userAgent,
+				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+				'Accept-Language': navigator.language,
+				'Cache-Control': 'no-cache',
+				'Pragma': 'no-cache'
+			}
+		});
+		
+		await this.customLog('Cookies rafraîchis');
+	} catch (error) {
+		await this.customLog(`Erreur lors du rafraîchissement des cookies: ${error.message}`, true);
+	}
+};
+
 SP.retry = async function() {
 	var self = this;
 	for (var key in self.queue) {
@@ -821,28 +910,53 @@ window.postMessage({
 
 // injected.js
 window.addEventListener('message', (event) => {
-    if (event.data?.source === 'content-script' && event.data.type === 'DATA_READY') {
+    if (event.source !== window) return;
+    if (event.data?.source === 'content-script' && event.data?.type === 'DATA_READY') {
         let payload = event.data.payload;
-      console.log('[Injected.js] Received message from content.js:', event.data.payload);
-      console.log('DATA_READY', payload);
-
-    //   let scraper = new Scraper(payload);
-
-    payload && payload.wait(async function(link, next) {
-        console.log(link);
-        fetch(link.link, { 
-            method: 'GET'
-        }).then(async function(response) {
-            let html = await response.text();
-            window.location.href = link.link;
+        const sampleSize = payload.sampleSize || 0;
+        const startParam = payload.start;
+        const endParam = payload.end;
+        
+        console.log('[Injected.js] Received message from content.js:', event.data.payload);
+        console.log('DATA_READY', payload);
+        
+        let items = payload.items;
+        
+        // Appliquer l'échantillonnage si demandé
+        if (sampleSize > 0 && items.length > sampleSize) {
+            console.log(`Échantillonnage activé: ${sampleSize} éléments sur ${items.length}`);
+            // Option 1: Prendre les premiers éléments
+            items = items.slice(0, sampleSize);
+            
+            // Option 2 (alternative): Prendre des éléments aléatoires
+            // items = getRandomSample(items, sampleSize);
+        }
+        
+        // Initialiser le Scraper avec les options d'échantillonnage
+        let scraper = new Scraper(items, {
+            sampleMode: sampleSize > 0,
+            sampleSize: sampleSize
         });
-    }, function() {
+        
+        // Utiliser le Scraper au lieu de la redirection directe
+        scraper.start();
+        
+        // Commenter cette partie pour éviter la redirection directe
+        /*
+        items && items.wait(async function(link, next) {
+            console.log(link);
+            fetch(link.link, { 
+                method: 'GET'
+            }).then(async function(response) {
+                let html = await response.text();
+                window.location.href = link.link;
+            });
+        }, function() {
 
-    });
-      //scraper.start();
-      // You can act on it, call internal functions, etc.
+        });
+        */
     }
-  });
+});
 
 
   function downloadAsHTML(text, filename) {
@@ -858,3 +972,399 @@ window.addEventListener('message', (event) => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }
+
+// Fonction pour obtenir un échantillon aléatoire
+function getRandomSample(array, size) {
+    if (size >= array.length) return array;
+    
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    
+    return shuffled.slice(0, size);
+}
+const ZENROWS_API_KEY = 'ce4b270edd469da1fa2ac04bba5dd7bd58a05301';
+const ZENROWS_PROXY_URL = 'https://api.zenrows.com/v1/';
+
+const originalFetch = window.fetch;
+let lastValidRequest = null;
+
+// Fonction pour surveiller et capturer les cookies PerimeterX
+function monitorPerimeterXCookies() {
+  const originalSetCookie = document.__lookupSetter__('cookie');
+  const originalGetCookie = document.__lookupGetter__('cookie');
+  
+  // Stocker les cookies PerimeterX
+  let pxCookies = {};
+  
+  // Intercepter les écritures de cookies
+  Object.defineProperty(document, 'cookie', {
+    set: function(value) {
+      // Appeler le setter original
+      originalSetCookie.call(document, value);
+      
+      // Capturer les cookies PerimeterX
+      try {
+        const cookieParts = value.split(';')[0].trim().split('=');
+        const name = cookieParts[0];
+        const cookieValue = cookieParts.slice(1).join('=');
+        
+        if (name && name.includes('_px')) {
+          pxCookies[name] = cookieValue;
+          console.log(`Cookie PerimeterX capturé: ${name}=${cookieValue}`);
+          
+          // Stocker dans localStorage pour persistance
+          localStorage.setItem('px_cookies', JSON.stringify(pxCookies));
+        }
+      } catch (e) {
+        console.error('Erreur lors de la capture du cookie:', e);
+      }
+    },
+    get: function() {
+      return originalGetCookie.call(document);
+    }
+  });
+  
+  // Charger les cookies stockés précédemment
+  try {
+    const storedCookies = localStorage.getItem('px_cookies');
+    if (storedCookies) {
+      pxCookies = JSON.parse(storedCookies);
+      console.log('Cookies PerimeterX chargés:', pxCookies);
+    }
+  } catch (e) {
+    console.error('Erreur lors du chargement des cookies stockés:', e);
+  }
+  
+  return pxCookies;
+}
+
+// Initialiser le monitoring des cookies
+let pxCookies = monitorPerimeterXCookies();
+
+// Intercepter toutes les requêtes fetch
+window.fetch = async function(input, init = {}) {
+  try {
+    // Determine if this is a StockX GraphQL request
+    const isStockXRequest = input.toString().includes('graphql') || 
+      (init.body && typeof init.body === 'string' && init.body.includes('operationName'));
+    
+    if (isStockXRequest) {
+      console.log('Requête GraphQL StockX détectée:', input, init);
+      
+      // Store original URL and prepare ZenRows URL
+      const originalUrl = input.toString();
+      const zenrowsUrl = `${ZENROWS_PROXY_URL}?url=${encodeURIComponent(originalUrl)}&apikey=${ZENROWS_API_KEY}`;
+      
+      // Prepare headers for ZenRows
+      const newInit = { ...init };
+      newInit.headers = {
+        ...newInit.headers,
+        'Content-Type': 'application/json',
+        // Add any specific ZenRows parameters as needed
+        'x-zenrows-custom-headers': JSON.stringify({
+          'apollographql-client-name': 'stockx-web',
+          'app-platform': 'web',
+          'app-version': '2023.07.01.01',
+          ...pxCookies // Include PerimeterX cookies
+        })
+      };
+      
+      // Store for reuse
+      lastValidRequest = {
+        url: originalUrl,
+        init: JSON.parse(JSON.stringify(newInit))
+      };
+      
+      // Make request through ZenRows
+      const response = await originalFetch(zenrowsUrl, newInit);
+      
+      // Handle response
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return response;
+    }
+    
+    // Non-StockX requests proceed normally
+    return await originalFetch(input, init);
+    
+  } catch (error) {
+    console.error('Erreur dans fetch intercepté:', error);
+    return await originalFetch(input, init);
+  }
+};
+
+// Fonction pour réutiliser la dernière requête valide
+async function reuseLastValidRequest(newBody) {
+  if (!lastValidRequest) {
+    console.error('Aucune requête valide disponible à réutiliser');
+    return null;
+  }
+  
+  try {
+    // Créer une copie de la dernière requête valide
+    const request = {
+      ...lastValidRequest.init,
+      body: newBody || lastValidRequest.init.body
+    };
+    
+    // Ajouter les cookies PerimeterX aux headers
+    if (!request.headers) request.headers = {};
+    if (Object.keys(pxCookies).length > 0) {
+      const cookieString = Object.entries(pxCookies)
+        .map(([name, value]) => `${name}=${value}`)
+        .join('; ');
+      request.headers['Cookie'] = cookieString;
+    }
+    
+    // Exécuter la requête
+    return await originalFetch(lastValidRequest.url, request);
+  } catch (error) {
+    console.error('Erreur lors de la réutilisation de la requête:', error);
+    return null;
+  }
+}
+
+// Exemple d'utilisation pour récupérer des données de produit
+async function fetchProductData(productId) {
+  try {
+    // Attendre que des requêtes légitimes soient capturées
+    await new Promise(resolve => {
+      const checkInterval = setInterval(() => {
+        if (lastValidRequest) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 500);
+      
+      // Timeout après 10 secondes
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        resolve();
+      }, 10000);
+    });
+    
+    if (!lastValidRequest) {
+      console.error('Aucune requête valide capturée');
+      return null;
+    }
+    
+    // Créer un nouveau corps de requête basé sur le dernier valide
+    const newBody = JSON.stringify({
+      // Adapter selon vos besoins
+      operationName: "GetProduct",
+      variables: {
+        id: productId
+      },
+      query: "query GetProduct($id: ID!) { product(id: $id) { id name price } }"
+    });
+    
+    // Utiliser la fonction de retry avec la requête clonée
+    const response = await fetchWithRetry(lastValidRequest.url, {
+      ...lastValidRequest.init,
+      body: newBody
+    }, 5);
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Erreur lors de la récupération des données produit:', error);
+    return null;
+  }
+}
+
+// Test avec un ID de produit
+// fetchProductData('some-product-id').then(data => console.log('Données produit:', data));
+
+// Ajouter au début de votre fichier inject.js
+
+// Modifier l'empreinte Canvas
+(function() {
+  // Sauvegarder les fonctions originales
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+  const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+  
+  // Remplacer getContext pour modifier subtilement le rendu
+  HTMLCanvasElement.prototype.getContext = function(type, attributes) {
+    const context = originalGetContext.call(this, type, attributes);
+    if (type === '2d') {
+      // Sauvegarder la fonction fillText originale
+      const originalFillText = context.fillText;
+      
+      // Remplacer fillText pour ajouter une variation subtile
+      context.fillText = function(text, x, y, maxWidth) {
+        // Si le texte ressemble à celui utilisé par PerimeterX pour le fingerprinting
+        if (text === 'mmmmmmmmmmlli' || text.length > 10) {
+          // Ajouter une variation subtile à la position
+          const newX = x + (Math.random() * 0.02 - 0.01);
+          return originalFillText.call(this, text, newX, y, maxWidth);
+        }
+        return originalFillText.call(this, text, x, y, maxWidth);
+      };
+    }
+    return context;
+  };
+  
+  // Modifier légèrement les données d'image pour éviter le fingerprinting
+  CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {
+    const imageData = originalGetImageData.call(this, sx, sy, sw, sh);
+    
+    // Modifier subtilement quelques pixels si c'est probablement un test de fingerprinting
+    if (sw < 200 && sh < 200 && imageData.data.length > 0) {
+      // Modifier un pixel aléatoire de façon subtile
+      const randomIndex = Math.floor(Math.random() * imageData.data.length / 4) * 4;
+      imageData.data[randomIndex] = Math.max(0, Math.min(255, imageData.data[randomIndex] + (Math.random() > 0.5 ? 1 : -1)));
+    }
+    
+    return imageData;
+  };
+})();
+
+// Ajouter cette fonction à votre code
+function randomDelay(min, max) {
+  const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+  return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+// Fonction améliorée pour simuler un comportement humain
+async function fetchWithHumanBehavior(url, options) {
+  // Simuler un délai humain aléatoire entre les requêtes (plus variable)
+  await randomDelay(800, 3500);
+  
+  // Cloner les options pour ne pas modifier l'original
+  const newOptions = JSON.parse(JSON.stringify(options));
+  
+  // Ajouter les cookies PerimeterX capturés
+  if (!newOptions.headers) newOptions.headers = {};
+  
+  // Ajouter des headers dynamiques qui changent à chaque requête
+  newOptions.headers = {
+    ...newOptions.headers,
+    'x-stockx-device-id': localStorage.getItem('x-stockx-device-uuid') || generateRandomDeviceId(),
+    'x-request-id': generateUUID(),
+    'x-timestamp': Date.now().toString(),
+  };
+  
+  // Ajouter une légère variation aux headers à chaque requête
+  if (Math.random() > 0.3) {
+    // Varier légèrement l'ordre des headers (important pour éviter les patterns)
+    const headerEntries = Object.entries(newOptions.headers);
+    headerEntries.sort(() => Math.random() - 0.5);
+    newOptions.headers = Object.fromEntries(headerEntries);
+  }
+  
+  // Ajouter le cookie document.cookie à la requête
+  if (document.cookie) {
+    const cookies = {};
+    document.cookie.split(';').forEach(cookie => {
+      const [name, value] = cookie.trim().split('=');
+      if (name) cookies[name] = value;
+    });
+    
+    // Ajouter les cookies PerimeterX directement dans les headers
+    if (cookies['_px3']) newOptions.headers['px3'] = cookies['_px3'];
+    if (cookies['_pxvid']) newOptions.headers['pxvid'] = cookies['_pxvid'];
+    if (cookies['_pxhd']) newOptions.headers['pxhd'] = cookies['_pxhd'];
+  }
+  
+  // Simuler un clic aléatoire sur la page avant la requête
+  if (Math.random() > 0.7) {
+    simulateRandomClick();
+  }
+  
+  // Ajouter un paramètre aléatoire à l'URL pour éviter la mise en cache
+  const urlWithNoise = url.includes('?') 
+    ? `${url}&_=${Date.now()}` 
+    : `${url}?_=${Date.now()}`;
+  
+  // Preserve the AbortSignal from the original options
+  const signal = options.signal;
+  delete newOptions.signal;  // Remove it from the cloned options
+
+  return fetch(urlWithNoise, {
+    ...newOptions,
+    signal  // Add it back properly
+  });
+}
+
+// Fonctions utilitaires pour fetchWithHumanBehavior
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+function generateRandomDeviceId() {
+  return btoa(generateUUID()).substring(0, 32);
+}
+
+function simulateRandomClick() {
+  try {
+    const x = Math.floor(Math.random() * window.innerWidth);
+    const y = Math.floor(Math.random() * window.innerHeight);
+    const clickEvent = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: x,
+      clientY: y
+    });
+    document.elementFromPoint(x, y)?.dispatchEvent(clickEvent);
+  } catch (e) {
+    // Ignorer les erreurs de simulation
+  }
+}
+
+// Fonction pour établir une connexion WebSocket sécurisée
+function setupSecureWebSocket(url) {
+  const ws = new WebSocket(url);
+  
+  ws.onopen = () => {
+    console.log('WebSocket connecté');
+  };
+  
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      // Traiter les données reçues
+    } catch (e) {
+      console.error('Erreur de parsing WebSocket:', e);
+    }
+  };
+  
+  ws.onerror = (error) => {
+    console.error('Erreur WebSocket:', error);
+  };
+  
+  return ws;
+}
+
+// Fonction pour établir une connexion WebSocket sécurisée
+function setupSecureWebSocket(url) {
+  const ws = new WebSocket(url);
+  
+  ws.onopen = () => {
+    console.log('WebSocket connecté');
+  };
+  
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      // Traiter les données reçues
+    } catch (e) {
+      console.error('Erreur de parsing WebSocket:', e);
+    }
+  };
+  
+  ws.onerror = (error) => {
+    console.error('Erreur WebSocket:', error);
+  };
+  
+  return ws;
+}

@@ -1,6 +1,7 @@
 const urlParams = new URLSearchParams(window.location.search);
 const start = urlParams.get('start');
 const end = urlParams.get('end');
+const sample = urlParams.get('sample') || 0; // Récupérer le paramètre sample
 
 function injectExternalScript() {
 	const script = document.createElement('script');
@@ -21,10 +22,17 @@ chrome.runtime.onMessage.addListener((message) => {
 	  const index = parseInt(localStorage.getItem("your_cache_key")) || 0;
 	  const itemsToProcess = data.items.slice(index);
   
-	  const start = index;
-	  const end = itemsToProcess.length;
+	  const startIndex = index;
+	  const endIndex = itemsToProcess.length;
+	  const sampleSize = message.sampleSize || sample || 0; // Utiliser le paramètre de l'URL ou du message
   
-	  sendtoinjected('DATA_READY', itemsToProcess);
+	  // Passer la taille d'échantillon avec les données
+	  sendtoinjected('DATA_READY', {
+	    items: itemsToProcess,
+	    sampleSize: sampleSize,
+	    start: start,
+	    end: end
+	  });
 
 	  const maxTries = 20;
 	  const retryDelay = 5000;

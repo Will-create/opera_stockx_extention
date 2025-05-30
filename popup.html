@@ -10,6 +10,13 @@
   <div id="panel">
     <img src="logo.png" alt="Logo" id="logo">
     <h1>MAJ Shopify</h1>
+    
+    <!-- Ajouter le contrôle d'échantillonnage dans le panneau principal -->
+    <div class="form-group">
+      <label for="sampleSize">Taille de l'échantillon (0 = tous) :</label>
+      <input type="number" id="sampleSize" min="0" value="0" class="form-control">
+    </div>
+    
     <button id="openTabs" class="D">Demarrer</button>
     <div id="progressContainer">
       <!-- Progress items will be dynamically added here -->
