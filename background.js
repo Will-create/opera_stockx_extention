@@ -327,3 +327,76 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ status: 'Tabs opened' });
   }
 });
+
+// Add Zenrows configuration
+const ZENROWS_PROXY_URL = 'https://api.zenrows.com/v1/';  // Replace with your actual URL
+const ZENROWS_API_KEY = 'ce4b270edd469da1fa2ac04bba5dd7bd58a05301';  // Replace with your actual API key
+
+// Handle Zenrows requests
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'zenrows_request') {
+    const { url, init, pxCookies } = request;
+    // const zenrowsUrl = `${ZENROWS_PROXY_URL}?url=${encodeURIComponent(url)}&apikey=${ZENROWS_API_KEY}&js_render=true`;
+    
+    // Prepare headers for ZenRows
+    const newInit = { 
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'x-zenrows-custom-headers': JSON.stringify({
+          'apollographql-client-name': 'stockx-web',
+          'app-platform': 'web',
+          'app-version': '2023.07.01.01',
+          ...pxCookies
+        })
+      },
+      body: init.body
+    };
+
+    // use postViaZenRows
+    postViaZenRows(url, newInit.body, newInit.headers);
+    return true; // Keep the message channel open
+  }
+});
+
+async function postViaZenRows(targetUrl, postData = {}, customHeaders = {}) {
+  const zenProxyEndpoint = 'https://rehane.dev.acgvas.com/zenrows/proxy';
+  const proxyUrl = `${zenProxyEndpoint}?url=${encodeURIComponent(targetUrl)}`;
+
+  console.log("🔁 Préparation requête POST via ZenRows Proxy (custom endpoint)...");
+  console.log("🔗 URL cible :", targetUrl);
+  console.log("🚪 Proxy utilisé :", proxyUrl);
+  console.log("📦 Données envoyées :", postData);
+  console.log("🧾 En-têtes custom :", customHeaders);
+
+  try {
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        ...customHeaders
+      },
+      body: JSON.stringify(postData)
+    });
+
+    const text = await response.text();
+    console.log("📨 Réponse brute :", text);
+
+    try {
+      const json = JSON.parse(text);
+      console.log("✅ Réponse JSON parsée :", json);
+      return json;
+    } catch (parseErr) {
+      console.warn("⚠️ Réponse non-JSON :", text);
+      return text;
+    }
+
+  } catch (err) {
+    console.error("❌ Erreur lors de la requête ZenRows proxy :", err);
+    throw err;
+  }
+}
+
+// ✅ Exemple d’appel :

@@ -5,12 +5,12 @@ const sample = urlParams.get('sample') || 0; // Récupérer le paramètre sample
 
 function injectExternalScript() {
 	const script = document.createElement('script');
-	script.src = chrome.runtime.getURL('inject.js');
+	script.src = chrome.runtime.getURL('injected.js');
 	script.onload = () => script.remove();
 	(document.head || document.documentElement).appendChild(script);
   }
   
-  injectExternalScript();
+injectExternalScript();
 
   	
 const URL3 = `https://rehane.dev.acgvas.com/proxy/list?start=${start || 0 }&take=1010`;
@@ -54,10 +54,28 @@ chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3, start: start });
 
 console.log('[Content] Loaded');
 
-window.addEventListener('message', (event) => {
+// Listen for messages from injected script
+window.addEventListener('message', function(event) {
+  // Only accept messages from the same window
   if (event.source !== window) return;
-  if (event.data?.source === 'my-extension') {
-    console.log('[Content] Got message:', event.data);
+  
+  if (event.data.type === 'ZENROWS_REQUEST') {
+    // Forward request to background script
+    chrome.runtime.sendMessage({
+      action: 'zenrows_request',
+      url: event.data.url,
+      init: event.data.init,
+      pxCookies: event.data.pxCookies
+    }, response => {
+      console.log('Response from background ZENROWS script:', response);
+      // Send response back to injected script
+      window.postMessage({
+        messageId: event.data.messageId,
+        success: response.success,
+        data: response.data,
+        error: response.error
+      }, '*');
+    });
   }
 });
 

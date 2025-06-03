@@ -1,4 +1,6 @@
 
+
+
 const urlParams = new URLSearchParams(window.location.search);
 const start = urlParams.get('start');
 const end = urlParams.get('end');
@@ -907,6 +909,44 @@ window.postMessage({
     }, '*');
 
 }
+function extractEUSizeData(htmlString) {
+    // Create a temporary DOM element to parse the HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlString;
+    
+    // Find all size selector buttons
+    const sizeButtons = tempDiv.querySelectorAll('button[data-testid="size-selector-button"]');
+    
+    const euSizeData = [];
+    
+    sizeButtons.forEach(button => {
+        // Get the size label
+        const sizeLabel = button.querySelector('[data-testid="selector-label"]');
+        const priceLabel = button.querySelector('[data-testid="selector-secondary-label"]');
+        
+        if (sizeLabel && priceLabel) {
+            const sizeText = sizeLabel.textContent.trim();
+            const priceText = priceLabel.textContent.trim();
+            
+            // Only process EU sizes
+            if (sizeText.startsWith('EU ')) {
+                const size = sizeText.replace('EU ', '');
+                const price = priceText.replace(/[^\d]/g, ''); // Extract only numbers
+                
+                euSizeData.push({
+                    size: parseFloat(size),
+                    price: parseInt(price),
+                    priceFormatted: priceText
+                });
+            }
+        }
+    });
+    
+    // Sort by size
+    euSizeData.sort((a, b) => a.size - b.size);
+    
+    return euSizeData;
+}
 
 // injected.js
 window.addEventListener('message', (event) => {
@@ -942,19 +982,23 @@ window.addEventListener('message', (event) => {
         scraper.start();
         
         // Commenter cette partie pour éviter la redirection directe
-        /*
         items && items.wait(async function(link, next) {
             console.log(link);
             fetch(link.link, { 
                 method: 'GET'
             }).then(async function(response) {
                 let html = await response.text();
-                window.location.href = link.link;
+				// log extraction start
+				console.log('Extraction de données en cours...');
+				let data = extractEUSizeData(html);
+				// log extraction end
+				console.log('Extraction de données terminée.');
+				console.log(data);
+                // window.location.href = link.link;
             });
         }, function() {
 
         });
-        */
     }
 });
 
@@ -988,6 +1032,7 @@ function getRandomSample(array, size) {
 const ZENROWS_API_KEY = 'ce4b270edd469da1fa2ac04bba5dd7bd58a05301';
 const ZENROWS_PROXY_URL = 'https://api.zenrows.com/v1/';
 
+const pendingRequests = new Map();
 const originalFetch = window.fetch;
 let lastValidRequest = null;
 
@@ -1044,52 +1089,87 @@ function monitorPerimeterXCookies() {
 // Initialiser le monitoring des cookies
 let pxCookies = monitorPerimeterXCookies();
 
+// Add the message event listener
+window.addEventListener('message', function(event) {
+  // Only accept messages from the same window
+  if (event.source !== window) return;
+  
+  // Check if this is a response from our Zenrows request
+  if (event.data && event.data.type === 'ZENROWS_RESPONSE') {
+    const { success, data, error, requestId } = event.data;
+    
+    // Find and resolve/reject the corresponding promise
+    const promiseHandler = pendingRequests.get(requestId);
+    if (promiseHandler) {
+      if (success) {
+        promiseHandler.resolve(new Response(JSON.stringify(data)));
+      } else {
+        promiseHandler.reject(new Error(error));
+      }
+      pendingRequests.delete(requestId);
+    }
+  }
+});
+
+// Helper function to create a clean init object
+function createCleanInit(init) {
+  const cleanInit = {};
+  
+  // Copy only cloneable properties
+  if (init.method) cleanInit.method = init.method;
+  if (init.headers) cleanInit.headers = {...init.headers};
+  if (init.body) cleanInit.body = init.body;
+  if (init.mode) cleanInit.mode = init.mode;
+  if (init.credentials) cleanInit.credentials = init.credentials;
+  if (init.cache) cleanInit.cache = init.cache;
+  if (init.redirect) cleanInit.redirect = init.redirect;
+  if (init.referrer) cleanInit.referrer = init.referrer;
+  if (init.referrerPolicy) cleanInit.referrerPolicy = init.referrerPolicy;
+  if (init.integrity) cleanInit.integrity = init.integrity;
+  if (init.keepalive) cleanInit.keepalive = init.keepalive;
+  
+  return cleanInit;
+}
+
 // Intercepter toutes les requêtes fetch
 window.fetch = async function(input, init = {}) {
   try {
-    // Determine if this is a StockX GraphQL request
     const isStockXRequest = input.toString().includes('graphql') || 
       (init.body && typeof init.body === 'string' && init.body.includes('operationName'));
     
     if (isStockXRequest) {
       console.log('Requête GraphQL StockX détectée:', input, init);
       
-      // Store original URL and prepare ZenRows URL
-      const originalUrl = input.toString();
-      const zenrowsUrl = `${ZENROWS_PROXY_URL}?url=${encodeURIComponent(originalUrl)}&apikey=${ZENROWS_API_KEY}`;
+      const requestId = Date.now().toString();
       
-      // Prepare headers for ZenRows
-      const newInit = { ...init };
-      newInit.headers = {
-        ...newInit.headers,
-        'Content-Type': 'application/json',
-        // Add any specific ZenRows parameters as needed
-        'x-zenrows-custom-headers': JSON.stringify({
-          'apollographql-client-name': 'stockx-web',
-          'app-platform': 'web',
-          'app-version': '2023.07.01.01',
-          ...pxCookies // Include PerimeterX cookies
-        })
-      };
-      
-      // Store for reuse
-      lastValidRequest = {
-        url: originalUrl,
-        init: JSON.parse(JSON.stringify(newInit))
-      };
-      
-      // Make request through ZenRows
-      const response = await originalFetch(zenrowsUrl, newInit);
-      
-      // Handle response
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const response = await new Promise((resolve, reject) => {
+        // Store the promise handlers
+        pendingRequests.set(requestId, { resolve, reject });
+        
+        // Create clean init object without non-cloneable properties
+        const cleanInit = createCleanInit(init);
+        
+        // Send the request to content script
+        window.postMessage({
+          type: 'ZENROWS_REQUEST',
+          requestId: requestId,
+          url: 'https://stockx.com' + input.toString(),
+          init: cleanInit,
+          pxCookies: pxCookies
+        }, '*');
+        
+        // Cleanup if no response received
+        setTimeout(() => {
+          if (pendingRequests.has(requestId)) {
+            pendingRequests.delete(requestId);
+            reject(new Error('Request timeout'));
+          }
+        }, 60000); // 60 second timeout
+      });
       
       return response;
     }
     
-    // Non-StockX requests proceed normally
     return await originalFetch(input, init);
     
   } catch (error) {
