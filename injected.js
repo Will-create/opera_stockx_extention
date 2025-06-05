@@ -59,31 +59,57 @@ function next_wait(self, onItem, callback, thread, tmp) {
 	self.wait(onItem, callback, thread, tmp);
 };
 
-
 // Enhanced scraper with localStorage-based navigation queue
 class PersistentScraper {
     constructor() {
-        this.STORAGE_KEY = 'scraper_queue';
-        this.STATUS_KEY = 'scraper_status';
-        this.RESULTS_KEY = 'scraper_results';
+        // Generate unique keys based on tab ID and URL parameters
+        this.tabIdentifier = this.generateTabIdentifier();
+        this.operationId = this.getOperationId();
+        
+        // Create unique storage keys using tab and operation identifiers
+        this.STORAGE_KEY = `scraper_queue_${this.operationId}_${this.tabIdentifier}`;
+        this.STATUS_KEY = `scraper_status_${this.operationId}_${this.tabIdentifier}`;
+        this.RESULTS_KEY = `scraper_results_${this.operationId}_${this.tabIdentifier}`;
+        
+        console.log(`[PersistentScraper] Initialized with keys: ${this.STORAGE_KEY}, ${this.STATUS_KEY}, ${this.RESULTS_KEY}`);
         this.init();
+    }
+    
+    // Generate a unique identifier for the current tab based on URL parameters
+    generateTabIdentifier() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const start = urlParams.get('start') || '0';
+        const end = urlParams.get('end') || '0';
+        return `tab_${start}_${end}`;
+    }
+    
+    // Get operation ID from URL or generate a timestamp-based one
+    getOperationId() {
+        const urlParams = new URLSearchParams(window.location.search);
+        // Try to get operation ID from URL if available
+        const opId = urlParams.get('op') || `op_${Date.now()}`;
+        return opId;
     }
 
     init() {
         // Wait for DOM to be ready before doing anything
         const initWhenReady = () => {
+            console.log('[PersistentScraper] DOM is ready');
             // Check if we have a queue in localStorage first
             const queueData = this.getStoredQueue();
+            // If we have a queue, log it  
+            console.log('[PersistentScraper] Stored queue:', queueData);
             
+
             if (queueData && queueData.items.length > 0) {
-                console.log('[PersistentScraper] Resuming from stored queue, seq:', queueData.currentSeq);
+                console.log(`[PersistentScraper] Resuming from stored queue ${this.STORAGE_KEY}, seq:`, queueData.currentSeq);
                 // Add a small delay to ensure page is fully loaded
                 setTimeout(() => {
                     this.processCurrentItem(queueData);
                 }, 1500);
             } else {
-                // No stored queue, register message listener for new data
-                this.registerMessageListener();
+                console.log('[PersistentScraper] No stored queue found. Starting from scratch');
+                // No stored queue, start from scratch
             }
         };
 
@@ -96,14 +122,6 @@ class PersistentScraper {
         }
     }
 
-    registerMessageListener() {
-        window.addEventListener('message', (event) => {
-            if (event.source !== window) return;
-            if (event.data?.source === 'content-script' && event.data?.type === 'DATA_READY') {
-                this.handleNewData(event.data.payload);
-            }
-        });
-    }
 
     handleNewData(payload) {
         console.log('[PersistentScraper] Received new data:', payload);
@@ -135,6 +153,7 @@ class PersistentScraper {
     }
 
     processCurrentItem(queueData) {
+        console.log('[PersistentScraper] Processing current item:', queueData.currentSeq);
         if (queueData.currentSeq >= queueData.items.length) {
             // All items processed
             this.completeProcessing(queueData);
@@ -146,10 +165,14 @@ class PersistentScraper {
 
         // If we're already on the target page, extract data
         if (window.location.href === currentItem.link) {
+            console.log('[PersistentScraper] Already on target page:', currentItem.link);
             this.extractDataFromCurrentPage(queueData, currentItem);
         } else {
-            // Navigate to the page using window.location.href
-            window.location.href = currentItem.link;
+            console.log('[PersistentScraper] Navigating to:', currentItem.link);
+            // Navigate to the page using window.location.href with concat of operation ID
+            let operationId = this.getOperationId();
+            console.log('[PersistentScraper] Navigating to:', currentItem.link + '&op=' + operationId);
+            window.location.href = currentItem.link + '?op=' + operationId;
             // The page will reload, and init() will resume from localStorage
         }
     }
@@ -833,7 +856,7 @@ class PersistentScraper {
         try {
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(queueData));
         } catch (e) {
-            console.error('[PersistentScraper] Failed to store queue:', e);
+            console.error(`[PersistentScraper] Failed to store queue in ${this.STORAGE_KEY}:`, e);
         }
     }
 
@@ -842,7 +865,7 @@ class PersistentScraper {
             const stored = localStorage.getItem(this.STORAGE_KEY);
             return stored ? JSON.parse(stored) : null;
         } catch (e) {
-            console.error('[PersistentScraper] Failed to get stored queue:', e);
+            console.error(`[PersistentScraper] Failed to get stored queue from ${this.STORAGE_KEY}:`, e);
             return null;
         }
     }
@@ -852,10 +875,12 @@ class PersistentScraper {
             localStorage.setItem(this.STATUS_KEY, JSON.stringify({
                 status: status,
                 timestamp: Date.now(),
-                url: window.location.href
+                url: window.location.href,
+                tabId: this.tabIdentifier,
+                operationId: this.operationId
             }));
         } catch (e) {
-            console.error('[PersistentScraper] Failed to store status:', e);
+            console.error(`[PersistentScraper] Failed to store status in ${this.STATUS_KEY}:`, e);
         }
     }
 
@@ -863,7 +888,7 @@ class PersistentScraper {
         try {
             localStorage.setItem(this.RESULTS_KEY, JSON.stringify(results));
         } catch (e) {
-            console.error('[PersistentScraper] Failed to store results:', e);
+            console.error(`[PersistentScraper] Failed to store results in ${this.RESULTS_KEY}:`, e);
         }
     }
 
@@ -877,33 +902,78 @@ class PersistentScraper {
         }
     }
 
-    // Utility methods for external access
-    static getResults() {
+    // Update static methods to handle the new key format
+    static getResults(operationId, tabId) {
         try {
-            const stored = localStorage.getItem('scraper_results');
-            return stored ? JSON.parse(stored) : null;
+            // If specific operationId and tabId are provided, use them
+            if (operationId && tabId) {
+                const key = `scraper_results_${operationId}_${tabId}`;
+                const stored = localStorage.getItem(key);
+                return stored ? JSON.parse(stored) : null;
+            }
+            
+            // Otherwise, try to find all results keys and return them
+            const results = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('scraper_results_')) {
+                    const stored = localStorage.getItem(key);
+                    results[key] = stored ? JSON.parse(stored) : null;
+                }
+            }
+            return results;
         } catch (e) {
             console.error('Failed to get results:', e);
             return null;
         }
     }
 
-    static getStatus() {
+    static getStatus(operationId, tabId) {
         try {
-            const stored = localStorage.getItem('scraper_status');
-            return stored ? JSON.parse(stored) : null;
+            // If specific operationId and tabId are provided, use them
+            if (operationId && tabId) {
+                const key = `scraper_status_${operationId}_${tabId}`;
+                const stored = localStorage.getItem(key);
+                return stored ? JSON.parse(stored) : null;
+            }
+            
+            // Otherwise, try to find all status keys and return them
+            const statuses = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('scraper_status_')) {
+                    const stored = localStorage.getItem(key);
+                    statuses[key] = stored ? JSON.parse(stored) : null;
+                }
+            }
+            return statuses;
         } catch (e) {
             console.error('Failed to get status:', e);
             return null;
         }
     }
 
-     clearAll() {
+    static clearAll(operationId) {
         try {
-            localStorage.removeItem('scraper_queue');
-            localStorage.removeItem('scraper_status');
-            localStorage.removeItem('scraper_results');
-            console.log('All scraper data cleared');
+            // If operationId is provided, only clear keys for that operation
+            if (operationId) {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.includes(`_${operationId}_`)) {
+                        localStorage.removeItem(key);
+                    }
+                }
+                console.log(`All scraper data for operation ${operationId} cleared`);
+            } else {
+                // Otherwise clear all scraper-related keys
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith('scraper_')) {
+                        localStorage.removeItem(key);
+                    }
+                }
+                console.log('All scraper data cleared');
+            }
         } catch (e) {
             console.error('Failed to clear data:', e);
         }
@@ -911,11 +981,22 @@ class PersistentScraper {
 }
 
 // Initialize the persistent scraper
+// Export utilities to global scope for debugging
 const persistentScraper = new PersistentScraper();
 
-// Export utilities to global scope for debugging
+window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    if (event.data?.source === 'content-script' && event.data?.type === 'DATA_READY') {
+        persistentScraper.handleNewData(event.data.payload);
+    }
+});
+
 window.ScraperUtils = {
     getResults: PersistentScraper.getResults,
     getStatus: PersistentScraper.getStatus,
     clearAll: PersistentScraper.clearAll
 };
+
+window.postMessage({
+    type: 'INJECTED_REQUEST'
+  }, '*');

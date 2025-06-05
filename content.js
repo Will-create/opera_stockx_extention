@@ -18,7 +18,6 @@ chrome.runtime.onMessage.addListener((message) => {
 	if (message.action === "runItems") {
 	  const data = message.data;
 	  console.log('🟢 DATA READY', data);
-  
 	  const index = parseInt(localStorage.getItem("your_cache_key")) || 0;
 	  const itemsToProcess = data.items.slice(index);
   
@@ -48,8 +47,12 @@ chrome.runtime.onMessage.addListener((message) => {
 	  // Store or forward them as needed
 	}
   });
-  
-chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3, start: start });
+
+// Fetch items from the background script in a delay to ensure the background script is ready'=
+let fetchTimeout = setTimeout(() => {
+  console.log('Fetching items from background script...');
+  chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3, start: start });
+}, 1000); // 1 second delay
 
 
 console.log('[Content] Loaded');

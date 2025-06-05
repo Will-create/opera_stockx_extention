@@ -27,7 +27,6 @@ function ensureVpnEnabled() {
 
 // Appeler cette fonction avant d'ouvrir les onglets StockX
 function openStockXTabs() {
-  ensureVpnEnabled();
   const RANGE = 1010;
   const URL = 'https://rehane.dev.acgvas.com/proxy/list?start=0&all=true';
 
@@ -43,7 +42,7 @@ function openStockXTabs() {
 
         let islast = (i + 1) == len;
         console.log(i, len);
-        const tabURL = `https://stockx.com/travis-scott-x-fc-barcelona-2024-25-match-away-cactus-jack-jersey-black?start=${Math.floor(start)}&end=${Math.floor(RANGE)}`;
+        const tabURL = `https://stockx.com/fr-fr/air-jordan-1-retro-low-og-sp-travis-scott-canary-ps?start=${Math.floor(start)}&end=${Math.floor(RANGE)}`;
         // Check if the tab URL is already opened
         if (!ids[tabURL]) {
           chrome.tabs.create({ url: tabURL, active: false }, (tab) => {
@@ -103,6 +102,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'openStockXTabs') {
     openStockXTabs(request.sampleSize || 0);
     sendResponse({ status: 'Tabs opened' });
+    return true; // Keep the message channel open for asynchronous response
   }
 });
 
@@ -173,12 +173,16 @@ function openStockXTabs(sampleSize = 0) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "open_tabs") {
     openStockXTabs();
+    sendResponse({ status: 'Tabs opened' });
+    return true; // Keep the message channel open
   }
 
   if (request.action == 'tab_progress') {
     console.log('RECEIVED PROGRESS DATA', request.start);
     stats[request.start] = { total: request.total, index: request.index };
     refresh();
+    sendResponse({ status: 'Progress updated' });
+    return true; // Keep the message channel open
   }
 
   if (request.action == 'fetchItems') {
@@ -187,8 +191,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     var tabid = tabs[start];
     fetch(URL3).then(async function(res) {
       var data = await res.json();
-      chrome && tabid && chrome.tabs.sendMessage(tabid, { action: "runItems", data: data});
-      });
+      if (chrome && tabid) {
+        try {
+          chrome.tabs.sendMessage(tabid, { action: "runItems", data: data}, response => {
+            if (chrome.runtime.lastError) {
+              console.warn('Error sending message:', chrome.runtime.lastError.message);
+            }
+            sendResponse({ status: 'Items fetched', data: data });
+          });
+        } catch (error) {
+          console.error('Error sending message to tab:', error);
+        }
+      }
+    }).catch(error => {
+      console.error('Error fetching items:', error);
+      sendResponse({ status: 'Error', error: error.message });
+    });
+    return true; // Keep the message channel open
   }
 });
 
@@ -199,12 +218,11 @@ function refresh () {
     var data = stats[key];
     var output = { id: key, url: urls[key], total: data.total, index: data.index, percentage: Math.floor((data.index / data.total ) * 100) };
     arr.push(output);  
-
+  }
   try {
     chrome.runtime.sendMessage({ action: 'updateProgress', data: JSON.stringify(arr) });
   } catch (e) {
     console.warn('No listener for updateProgress message');
-  }
   }
 }
 
@@ -232,7 +250,7 @@ function focus_cycle (len) {
     focusNextTab();
   })
     
-  }
+}
 
 // Listener to clean up `ids` when tabs are closed
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -248,6 +266,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "getHeaders") {
     sendResponse({ headers: capturedHeaders });
+    return true; // Keep the message channel open
   }
 });
 
@@ -302,11 +321,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         setTimeout(() => {
           chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
             if (tabs && tabs[0]) {
-              chrome.tabs.sendMessage(tabs[0].id, {
-                action: 'runItems',
-                data: data,
-                sampleSize: message.sampleSize
-              });
+              try {
+                chrome.tabs.sendMessage(tabs[0].id, {
+                  action: 'runItems',
+                  data: data,
+                  sampleSize: message.sampleSize
+                }, response => {
+                  if (chrome.runtime.lastError) {
+                    console.warn('Error sending message:', chrome.runtime.lastError.message);
+                  }
+                });
+              } catch (error) {
+                console.error('Error sending message to tab:', error);
+              }
             }
           });
         }, 3000); // Attendre 3 secondes pour que l'onglet soit chargé
@@ -316,15 +343,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       openStockXTabs(0);
       fetchItems(0).then(data => {
         chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-          chrome.tabs.sendMessage(tabs[0].id, {
-            action: 'runItems',
-            data: data,
-            sampleSize: 0
-          });
+          if (tabs && tabs[0]) {
+            try {
+              chrome.tabs.sendMessage(tabs[0].id, {
+                action: 'runItems',
+                data: data,
+                sampleSize: 0
+              }, response => {
+                if (chrome.runtime.lastError) {
+                  console.warn('Error sending message:', chrome.runtime.lastError.message);
+                }
+              });
+            } catch (error) {
+              console.error('Error sending message to tab:', error);
+            }
+          }
         });
       });
     }
     sendResponse({ status: 'Tabs opened' });
+    return true; // Keep the message channel open
   }
 });
 
