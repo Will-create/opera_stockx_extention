@@ -26,7 +26,7 @@
     {
       "matches": ["https://stockx.com/*"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_end"
     }
   ],
   "content_security_policy": {
@@ -34,7 +34,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["injected.js"],
+      "resources": ["optimized.js"],
       "matches": ["https://stockx.com/*"]
     }
   ]

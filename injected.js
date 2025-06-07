@@ -163,21 +163,17 @@ class PersistentScraper {
         const currentItem = queueData.items[queueData.currentSeq];
         console.log(`[PersistentScraper] Processing item ${queueData.currentSeq + 1}/${queueData.totalItems}:`, currentItem.link);
 
-        // If we're already on the target page, extract data
-        if (window.location.href === currentItem.link) {
-            console.log('[PersistentScraper] Already on target page:', currentItem.link);
-            this.extractDataFromCurrentPage(queueData, currentItem);
-        } else {
-            console.log('[PersistentScraper] Navigating to:', currentItem.link);
-            // Navigate to the page using window.location.href with concat of operation ID
+
+    // If we're already on the target page, extract data
+        console.log('[PersistentScraper] Already on target page:', currentItem.link);
+        this.extractDataFromCurrentPage(queueData, currentItem, () => {
             let operationId = this.getOperationId();
-            console.log('[PersistentScraper] Navigating to:', currentItem.link + '&op=' + operationId);
             window.location.href = currentItem.link + '?op=' + operationId;
-            // The page will reload, and init() will resume from localStorage
-        }
+
+        });
     }
 
-    extractDataFromCurrentPage(queueData, currentItem) {
+    extractDataFromCurrentPage(queueData, currentItem, callback) {
         console.log('[PersistentScraper] ===== EXTRACTING DATA FROM CURRENT PAGE =====');
         console.log('[PersistentScraper] URL:', window.location.href);
         console.log('[PersistentScraper] Current item:', currentItem);
@@ -212,7 +208,8 @@ class PersistentScraper {
             queueData.results.push(result);
             
             // Auto-download current results after each extraction
-            this.downloadResults(queueData.results, `scraping_progress_${queueData.currentSeq + 1}.txt`);
+            
+            //this.downloadResults(queueData.results, `scraping_progress_${queueData.currentSeq + 1}.txt`);
             
             if (data && data.length > 0) {
                 console.log('[PersistentScraper] ✅ Data extracted successfully:', data);
@@ -229,6 +226,7 @@ class PersistentScraper {
                     }
                 }, '*');
             } else {
+                callback && callback();
                 console.warn('[PersistentScraper] ❌ No data found for:', currentItem.link);
                 console.log('[PersistentScraper] Debugging - checking page elements...');
                 this.debugPageElements();
@@ -243,6 +241,7 @@ class PersistentScraper {
             // Process next item after a short delay
             setTimeout(() => {
                 this.processCurrentItem(queueData);
+                callback && callback();
             }, 2000); // Increased delay to 2 seconds
         });
     }
@@ -270,14 +269,14 @@ class PersistentScraper {
                 name: 'MutationObserver',
                 fn: (cb) => this.waitForSizeData(cb, timeout / 3)
             },
-            {
-                name: 'Polling',
-                fn: (cb) => this.pollForSizeData(cb, 60, 500) // Increased attempts and interval
-            },
-            {
-                name: 'MultipleConditions',
-                fn: (cb) => this.waitForMultipleConditions(cb, timeout / 3)
-            }
+            // {
+            //     name: 'Polling',
+            //     fn: (cb) => this.pollForSizeData(cb, 60, 500) // Increased attempts and interval
+            // },
+            // {
+            //     name: 'MultipleConditions',
+            //     fn: (cb) => this.waitForMultipleConditions(cb, timeout / 3)
+            // }
         ];
         
         strategies.forEach((strategy, index) => {
@@ -823,6 +822,7 @@ class PersistentScraper {
         } catch (error) {
             console.error('[PersistentScraper] Failed to download results:', error);
         }
+        let queueData = this.getStoredQueue();
         console.log('[PersistentScraper] All items processed!');
         console.log('Results summary:', {
             total: queueData.totalItems,
@@ -985,6 +985,7 @@ class PersistentScraper {
 const persistentScraper = new PersistentScraper();
 
 window.addEventListener('message', (event) => {
+    console.log('EVENT FROM CONTENT', event.data);
     if (event.source !== window) return;
     if (event.data?.source === 'content-script' && event.data?.type === 'DATA_READY') {
         persistentScraper.handleNewData(event.data.payload);
@@ -996,7 +997,3 @@ window.ScraperUtils = {
     getStatus: PersistentScraper.getStatus,
     clearAll: PersistentScraper.clearAll
 };
-
-window.postMessage({
-    type: 'INJECTED_REQUEST'
-  }, '*');

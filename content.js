@@ -5,7 +5,7 @@ const sample = urlParams.get('sample') || 0; // Récupérer le paramètre sample
 
 function injectExternalScript() {
 	const script = document.createElement('script');
-	script.src = chrome.runtime.getURL('injected.js');
+	script.src = chrome.runtime.getURL('optimized.js');
 	script.onload = () => script.remove();
 	(document.head || document.documentElement).appendChild(script);
   }
@@ -17,7 +17,6 @@ const URL3 = `https://rehane.dev.acgvas.com/proxy/list?start=${start || 0 }&take
 chrome.runtime.onMessage.addListener((message) => {
 	if (message.action === "runItems") {
 	  const data = message.data;
-	  console.log('🟢 DATA READY', data);
 	  const index = parseInt(localStorage.getItem("your_cache_key")) || 0;
 	  const itemsToProcess = data.items.slice(index);
   
@@ -49,14 +48,22 @@ chrome.runtime.onMessage.addListener((message) => {
   });
 
 // Fetch items from the background script in a delay to ensure the background script is ready'=
-let fetchTimeout = setTimeout(() => {
-  console.log('Fetching items from background script...');
-  chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3, start: start });
-}, 1000); // 1 second delay
-
-
+console.log('Fetching items from background script...');
+chrome.runtime.sendMessage({ action: 'fetchItems', url: URL3, start: start }, function(response) {
+let data = response.data;
+console.log('🟢 DATA READY ======', data);
+const index = parseInt(localStorage.getItem("your_cache_key")) || 0;
+const itemsToProcess = data.items.slice(index);
+const startIndex = index;
+const endIndex = itemsToProcess.length;
+// Passer la taille d'échantillon avec les données
+sendtoinjected('DATA_READY', {
+	items: itemsToProcess,
+	start: start,
+	end: end
+});
+});
 console.log('[Content] Loaded');
-
 // Listen for messages from injected script
 window.addEventListener('message', function(event) {
   // Only accept messages from the same window
