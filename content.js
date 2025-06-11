@@ -5,7 +5,7 @@ const sample = urlParams.get('sample') || 0; // Récupérer le paramètre sample
 
 function injectExternalScript() {
 	const script = document.createElement('script');
-	script.src = chrome.runtime.getURL('optimized.js');
+	script.src = chrome.runtime.getURL('optimus.js');
 	script.onload = () => script.remove();
 	(document.head || document.documentElement).appendChild(script);
   }

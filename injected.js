@@ -87,7 +87,7 @@ class PersistentScraper {
     getOperationId() {
         const urlParams = new URLSearchParams(window.location.search);
         // Try to get operation ID from URL if available
-        const opId = urlParams.get('op') || `op_${Date.now()}`;
+        const opId = urlParams.get('op') || `op_today`;
         return opId;
     }
 
