@@ -2,15 +2,15 @@ const urlParams = new URLSearchParams(window.location.search);
 const start = urlParams.get('start');
 const end = urlParams.get('end');
 const sample = urlParams.get('sample') || 0; // Récupérer le paramètre sample
-
 function injectExternalScript() {
 	const script = document.createElement('script');
-	script.src = chrome.runtime.getURL('optimus.js');
+	script.src = chrome.runtime.getURL('production.js');
 	script.onload = () => script.remove();
 	(document.head || document.documentElement).appendChild(script);
   }
   
 injectExternalScript();
+var SCRAPERDATA;
 
   	
 const URL3 = `https://rehane.dev.acgvas.com/proxy/list?start=${start || 0 }&take=1010`;
@@ -25,6 +25,7 @@ chrome.runtime.onMessage.addListener((message) => {
 	  const sampleSize = message.sampleSize || sample || 0; // Utiliser le paramètre de l'URL ou du message
   
 	  // Passer la taille d'échantillon avec les données
+	 SCRAPERDATA = itemsToProcess;
 	  sendtoinjected('DATA_READY', {
 	    items: itemsToProcess,
 	    sampleSize: sampleSize,
@@ -32,9 +33,25 @@ chrome.runtime.onMessage.addListener((message) => {
 	    end: end
 	  });
 
+
+	
 	  const maxTries = 20;
 	  const retryDelay = 5000;
 	  let attempt = 0;
+	  let tm = setTimeout(function() {
+		attempt++;
+		if (attempt < maxTries){
+			SCRAPERDATA && sendtoinjected('DATA_READY', {
+				items: SCRAPERDATA,
+				sampleSize: sampleSize,
+				start: start,
+				end: end
+			  });
+
+
+			tm && clearTimeout(tm);
+		}
+	  }, retryDelay)
 	}
   });
 
